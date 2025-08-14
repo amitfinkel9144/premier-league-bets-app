@@ -1,0 +1,3 @@
+functions:
+  send-reminders:
+    schedule: "0 * * * *"
