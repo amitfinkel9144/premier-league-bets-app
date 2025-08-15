@@ -83,11 +83,11 @@ function getTeamCode(raw: string): string {
   const mapped = NAME_TO_CODE[key];
   if (mapped) return mapped;
 
-  // fallback: שלוש אותיות ראשונות של הנורמליזציה
   const fallback = key.slice(0, 3).toUpperCase();
   return fallback || 'TBD';
 }
 
+// נתיב לוגו לפי קוד (התאם לתיקיית ה-public שלך)
 function getLogoPathFromCode(code: string): string {
   return `/logos/${code}_logo.svg`;
 }
@@ -128,7 +128,11 @@ function TeamBadge({ teamName }: { teamName: string }) {
   );
 }
 
-/** -------- Main Page -------- */
+/** --- אפשרויות הקבוצות ל-select של אלופה --- */
+const TEAM_OPTIONS = [
+  'ARS','AVL','BOU','BRE','BHA','CHE','CRY','EVE','FUL','LEE','LIV','MCI','MUN','NEW','NFO','SUN','TOT','WHU','WOL'
+];
+
 export default function SubmitPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Predictions>({});
@@ -137,12 +141,34 @@ export default function SubmitPage() {
   const [lockTime, setLockTime] = useState<Date | null>(null);
   const [isMatchdayLocked, setIsMatchdayLocked] = useState(false);
 
+  // אלופה
+  const [championPick, setChampionPick] = useState<string>('');
+  const [existingChampionPick, setExistingChampionPick] = useState<string>('');
+  const [isSeasonPickSaving, setIsSeasonPickSaving] = useState(false);
+  const [beforeFirstKickoff, setBeforeFirstKickoff] = useState<boolean>(false);
+
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setUserId(user.id);
 
+      /** קביעת האם אנחנו לפני המשחק הראשון של העונה */
+      const { data: firstMatch } = await supabase
+        .from('matches')
+        .select('start_datetime')
+        .order('start_datetime', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (firstMatch?.start_datetime) {
+        const first = new Date(firstMatch.start_datetime).getTime();
+        setBeforeFirstKickoff(Date.now() < first);
+      } else {
+        setBeforeFirstKickoff(false);
+      }
+
+      /** טעינת כל המשחקים לקביעת המחזור הקרוב שלא הושלם */
       const { data: allMatches } = await supabase
         .from('matches')
         .select('*')
@@ -178,7 +204,7 @@ export default function SubmitPage() {
       setLockTime(lock);
       setIsMatchdayLocked(new Date() >= lock);
 
-      // טעינת ניחושים קיימים
+      // טעינת ניחושים קיימים למחזור
       const { data: existingPredictions } = await supabase
         .from('predictions')
         .select('match_id, predicted_home_score, predicted_away_score')
@@ -189,7 +215,7 @@ export default function SubmitPage() {
         initial[m.id] = { home: '', away: '' };
       }
       if (existingPredictions) {
-        existingPredictions.forEach((p) => {
+        (existingPredictions as any[]).forEach((p) => {
           initial[p.match_id] = {
             home: p.predicted_home_score == null ? '' : String(p.predicted_home_score),
             away: p.predicted_away_score == null ? '' : String(p.predicted_away_score),
@@ -197,6 +223,18 @@ export default function SubmitPage() {
         });
       }
       setPredictions(initial);
+
+      // טעינת הימור אלופה קיים
+      const { data: pickData } = await supabase
+        .from('season_winner_picks')
+        .select('team_code')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (pickData?.team_code) {
+        setExistingChampionPick(pickData.team_code);
+        setChampionPick(pickData.team_code);
+      }
     };
 
     fetchInitialData();
@@ -235,11 +273,76 @@ export default function SubmitPage() {
     else alert(error.message);
   };
 
+  const saveChampionPick = async () => {
+    if (!userId || !championPick) return;
+    setIsSeasonPickSaving(true);
+    const { error } = await supabase
+      .from('season_winner_picks')
+      .upsert({ user_id: userId, team_code: championPick }, { onConflict: 'user_id' });
+    setIsSeasonPickSaving(false);
+    if (error) {
+      console.error('שגיאה בשמירת הימור אלופה:', error.message);
+    } else {
+      setExistingChampionPick(championPick);
+    }
+  };
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100 px-4 py-8">
       <div className="bg-white shadow-lg rounded-xl p-8 w-full max-w-md text-center">
         <h1 className="text-2xl font-bold mb-6">הימורים למחזור הקרוב</h1>
 
+        {/* חלונית הימור אלופה — מופיעה רק לפני המשחק הראשון של העונה */}
+        {beforeFirstKickoff && (
+          <div className="mb-6 rounded-2xl border p-4 text-left">
+            <h3 className="font-semibold mb-2">הימור אלופת העונה</h3>
+
+            {existingChampionPick ? (
+              <div className="flex items-center gap-3 mb-3">
+                <img
+                  src={getLogoPathFromCode(existingChampionPick)}
+                  alt={existingChampionPick}
+                  className="w-6 h-6"
+                  onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+                />
+                <span>
+                  ההימור הנוכחי שלך: <b>{existingChampionPick}</b>
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mb-2">
+                בחר/י אלופה לפני תחילת המשחק הראשון של העונה. לאחר מכן לא ניתן יהיה לבחור.
+              </p>
+            )}
+
+            <div className="flex gap-3 items-center">
+              <select
+                className="border rounded-md px-3 py-2"
+                value={championPick}
+                onChange={(e) => setChampionPick(e.target.value)}
+              >
+                <option value="">בחר/י קבוצה...</option>
+                {TEAM_OPTIONS.map((code) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+
+              <button
+                disabled={!championPick || isSeasonPickSaving}
+                onClick={saveChampionPick}
+                className="bg-gray-800 hover:bg-gray-900 text-white rounded px-4 py-2 disabled:opacity-50"
+              >
+                שמירה
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 mt-2">
+              ניתן לשנות עד תחילת המחזור הראשון .
+            </p>
+          </div>
+        )}
+
+        {/* הודעת נעילה למחזור */}
         {lockTime && !isMatchdayLocked && (
           <p className="mb-4 text-sm text-red-600">
             המחזור ינעל להימורים ב־{' '}
