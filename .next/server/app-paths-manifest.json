@@ -1,0 +1,6 @@
+{
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/submit/page": "app/submit/page.js",
+  "/cup/page": "app/cup/page.js",
+  "/leaderboard/page": "app/leaderboard/page.js"
+}

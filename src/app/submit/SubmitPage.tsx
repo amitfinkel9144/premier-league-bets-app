@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+/** ------- Types ------- */
 type Match = {
   id: number;
-  home_team: string;
+  home_team: string;   // יכול להיות שם מלא או כבר קוד 3 אותיות
   away_team: string;
   start_datetime: string;
   matchday: number;
@@ -13,9 +14,124 @@ type Match = {
   actual_away_score: number | null;
 };
 
+type PredictionValue = '' | string;
+type Predictions = Record<number, { home: PredictionValue; away: PredictionValue }>;
+
+/** --- נרמול שם קבוצה: אותיות בלבד, & -> and, בלי רווחים/פיסוק --- */
+function normalizeName(s: string): string {
+  return s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z]/g, '');
+}
+
+/** ------- Name -> 3-letter code mapping (על בסיס שם מנורמל) ------- */
+const NAME_TO_CODE: Record<string, string> = {
+  // Arsenal
+  arsenal: 'ARS', ars: 'ARS',
+  // Aston Villa
+  astonvilla: 'AVL', avl: 'AVL',
+  // Bournemouth
+  bournemouth: 'BOU', bou: 'BOU',
+  // Brighton & Hove Albion
+  brighton: 'BHA', brightonandhovealbion: 'BHA', bha: 'BHA',
+  // Brentford
+  brentford: 'BRE', bre: 'BRE',
+  // Burnley
+  burnley: 'BUR', bur: 'BUR',
+  // Chelsea
+  chelsea: 'CHE', che: 'CHE',
+  // Crystal Palace
+  crystalpalace: 'CRY', cry: 'CRY',
+  // Everton
+  everton: 'EVE', eve: 'EVE',
+  // Fulham
+  fulham: 'FUL', ful: 'FUL',
+  // Leeds (אם רלוונטי)
+  leeds: 'LEE', leedsunited: 'LEE', lee: 'LEE',
+  // Liverpool
+  liverpool: 'LIV', lfc: 'LIV', liv: 'LIV',
+  // Manchester City
+  manchestercity: 'MCI', mancity: 'MCI', mci: 'MCI',
+  // Manchester United
+  manchesterunited: 'MUN', manutd: 'MUN', mun: 'MUN',
+  // Newcastle
+  newcastle: 'NEW', newcastleunited: 'NEW', new: 'NEW',
+  // Nottingham Forest — כל הווריאנטים
+  nottinghamforest: 'NFO',
+  nottmforest: 'NFO',
+  nottm: 'NFO',
+  forest: 'NFO',
+  // Sunderland (אם קיים)
+  sunderland: 'SUN', sun: 'SUN',
+  // Tottenham
+  tottenham: 'TOT', tottenhamhotspur: 'TOT', spurs: 'TOT', tot: 'TOT',
+  // West Ham
+  westham: 'WHU', westhamunited: 'WHU', whu: 'WHU',
+  // Wolves
+  wolves: 'WOL', wolverhampton: 'WOL', wolverhamptonwanderers: 'WOL', wol: 'WOL',
+};
+
+/** מחזיר קוד 3‑אותיות:
+ * 1) אם כבר 3 אותיות → מחזיר כמו שהוא ב-UPPERCASE
+ * 2) אחרת מיפוי לפי שם מנורמל
+ * 3) אחרת fallback: שלוש האותיות הראשונות של השם המנורמל (או 'TBD' אם ריק)
+ */
+function getTeamCode(raw: string): string {
+  if (!raw) return 'TBD';
+  const trimmed = raw.trim();
+  if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
+
+  const key = normalizeName(trimmed);
+  const mapped = NAME_TO_CODE[key];
+  if (mapped) return mapped;
+
+  // fallback: שלוש אותיות ראשונות של הנורמליזציה
+  const fallback = key.slice(0, 3).toUpperCase();
+  return fallback || 'TBD';
+}
+
+function getLogoPathFromCode(code: string): string {
+  return `/logos/${code}_logo.svg`;
+}
+
+/** --- ניקוי והגבלת קלט ל-0..15 כמחרוזת --- */
+function sanitizeScoreInput(raw: string): PredictionValue {
+  const digitsOnly = raw.replace(/[^0-9]/g, '');
+  if (digitsOnly === '') return '';
+  const normalized = digitsOnly.replace(/^0+(?=\d)/, '');
+  const n = Math.max(0, Math.min(15, parseInt(normalized, 10)));
+  return String(n);
+}
+
+/** -------- Component: Team Badge (ללא מסגרת; מציג גם את הקוד מתחת) -------- */
+function TeamBadge({ teamName }: { teamName: string }) {
+  const code = useMemo(() => getTeamCode(teamName), [teamName]);
+  const initialLogo = useMemo(() => getLogoPathFromCode(code), [code]);
+  const [imgSrc, setImgSrc] = useState<string | null>(initialLogo);
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="w-14 h-14 flex items-center justify-center bg-transparent">
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={code}
+            className="w-14 h-14 object-contain"
+            onError={() => setImgSrc(null)}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <span className="text-sm text-gray-500">{code}</span>
+        )}
+      </div>
+      <span className="text-xs text-gray-600 mt-1 tracking-wide">{code}</span>
+    </div>
+  );
+}
+
+/** -------- Main Page -------- */
 export default function SubmitPage() {
   const [matches, setMatches] = useState<Match[]>([]);
-  const [predictions, setPredictions] = useState<Record<number, { home: number | ''; away: number | '' }>>({});
+  const [predictions, setPredictions] = useState<Predictions>({});
   const [submitted, setSubmitted] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [lockTime, setLockTime] = useState<Date | null>(null);
@@ -25,7 +141,6 @@ export default function SubmitPage() {
     const fetchInitialData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       setUserId(user.id);
 
       const { data: allMatches } = await supabase
@@ -35,50 +150,49 @@ export default function SubmitPage() {
 
       if (!allMatches || allMatches.length === 0) return;
 
-      const now = new Date();
+      // מציאת המחזור הקרוב שלא הושלם
       const grouped: Record<number, Match[]> = {};
-
-      allMatches.forEach((m: Match) => {
+      allMatches.forEach((m) => {
         grouped[m.matchday] = grouped[m.matchday] || [];
         grouped[m.matchday].push(m);
       });
 
       let nextMatchdayMatches: Match[] = [];
       for (const md of Object.keys(grouped).map(Number).sort((a, b) => a - b)) {
-        const allFinished = grouped[md].every((m) =>
-          m.actual_home_score !== null && m.actual_away_score !== null
+        const allFinished = grouped[md].every(
+          (m) => m.actual_home_score !== null && m.actual_away_score !== null
         );
         if (!allFinished) {
           nextMatchdayMatches = grouped[md];
           break;
         }
       }
-
       if (nextMatchdayMatches.length === 0) return;
       setMatches(nextMatchdayMatches);
 
+      // נעילה: 90 דקות לפני המשחק הראשון במחזור
       const firstGame = [...nextMatchdayMatches].sort(
         (a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime()
       )[0];
-
       const lock = new Date(new Date(firstGame.start_datetime).getTime() - 90 * 60 * 1000);
       setLockTime(lock);
-      setIsMatchdayLocked(now >= lock);
+      setIsMatchdayLocked(new Date() >= lock);
 
+      // טעינת ניחושים קיימים
       const { data: existingPredictions } = await supabase
         .from('predictions')
         .select('match_id, predicted_home_score, predicted_away_score')
         .eq('user_id', user.id);
 
-      const initial: Record<number, { home: number | ''; away: number | '' }> = {};
+      const initial: Predictions = {};
       for (const m of nextMatchdayMatches) {
         initial[m.id] = { home: '', away: '' };
       }
       if (existingPredictions) {
         existingPredictions.forEach((p) => {
           initial[p.match_id] = {
-            home: p.predicted_home_score,
-            away: p.predicted_away_score,
+            home: p.predicted_home_score == null ? '' : String(p.predicted_home_score),
+            away: p.predicted_away_score == null ? '' : String(p.predicted_away_score),
           };
         });
       }
@@ -88,14 +202,11 @@ export default function SubmitPage() {
     fetchInitialData();
   }, []);
 
-  const handleChange = (matchId: number, field: 'home' | 'away', value: string) => {
-    const n = value === '' ? '' : Math.max(0, Math.min(15, parseInt(value) || 0));
+  const handleChange = (matchId: number, field: 'home' | 'away', rawValue: string) => {
+    const cleaned = sanitizeScoreInput(rawValue);
     setPredictions((prev) => ({
       ...prev,
-      [matchId]: {
-        ...prev[matchId],
-        [field]: n,
-      },
+      [matchId]: { ...prev[matchId], [field]: cleaned },
     }));
   };
 
@@ -141,51 +252,71 @@ export default function SubmitPage() {
         ) : (
           matches.map((match) => {
             const p = predictions[match.id] ?? { home: '', away: '' };
+            const homeCode = getTeamCode(match.home_team);
+            const awayCode = getTeamCode(match.away_team);
+
             return (
               <div key={match.id} className="mb-5 rounded-2xl border p-4">
-                <p className="font-semibold mb-3 text-center">
-                  {match.home_team} <span className="text-gray-500 font-normal">VS</span> {match.away_team}
+                {/* תאריך/שעה */}
+                <p className="text-xs text-gray-500 mb-2">
+                  {new Date(match.start_datetime).toLocaleString('he-IL', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
                 </p>
 
-                {/* 3 עמודות: בית | VS | חוץ (ללא תלות ב‑RTL) */}
+                {/* 3 עמודות: בית | VS | חוץ */}
                 <div dir="ltr" className="grid grid-cols-3 items-center gap-3">
-                  {/* בית מתחת לקבוצת הבית */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-sm mb-1">{match.home_team}</span>
+                  {/* בית */}
+                  <div className="flex flex-col items-center gap-2">
+                    <TeamBadge teamName={match.home_team} />
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       disabled={isMatchdayLocked}
                       className={`border p-2 rounded w-16 text-center transition-all ${
-                        isMatchdayLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'
+                        isMatchdayLocked
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-white'
                       }`}
                       placeholder="בית"
                       value={p.home}
                       onChange={(e) => handleChange(match.id, 'home', e.target.value)}
                     />
+                    <span className="text-xs text-gray-500">בית</span>
                   </div>
 
-                  {/* VS באמצע */}
-                  <div className="flex items-center justify-center">
-                    <span className="text-xs text-gray-500">VS</span>
+                  {/* VS */}
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="text-sm text-gray-500 font-semibold">VS</span>
                   </div>
 
-                  {/* חוץ מתחת לקבוצת החוץ */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-sm mb-1">{match.away_team}</span>
+                  {/* חוץ */}
+                  <div className="flex flex-col items-center gap-2">
+                    <TeamBadge teamName={match.away_team} />
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       disabled={isMatchdayLocked}
                       className={`border p-2 rounded w-16 text-center transition-all ${
-                        isMatchdayLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white'
+                        isMatchdayLocked
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-white'
                       }`}
                       placeholder="חוץ"
                       value={p.away}
                       onChange={(e) => handleChange(match.id, 'away', e.target.value)}
                     />
+                    <span className="text-xs text-gray-500">חוץ</span>
                   </div>
                 </div>
+
+                {/* שורת fallback/נגישות – תמיד קוד 3 אותיות */}
+                <p className="mt-3 text-xs text-gray-600 tracking-wide">
+                  {homeCode} <span className="text-gray-400">VS</span> {awayCode}
+                </p>
               </div>
             );
           })
