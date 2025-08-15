@@ -10,14 +10,12 @@ export default function ProfilePage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [saved, setSaved] = useState(false);
   const [email, setEmail] = useState('');
+  const [saving, setSaving] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     const fetchUser = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) {
         router.push('/login');
@@ -40,6 +38,8 @@ export default function ProfilePage() {
   }, [router]);
 
   const saveProfile = async () => {
+    if (!email) return;
+    setSaving(true);
     const { error } = await supabase
       .from('users')
       .update({
@@ -47,33 +47,56 @@ export default function ProfilePage() {
         phone_number: phoneNumber,
       })
       .eq('email', email);
+    setSaving(false);
 
     if (!error) {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } else {
+      alert(error.message);
     }
   };
 
+  const inputBase =
+    'w-full mt-1 p-2 rounded text-right border bg-white text-gray-900 border-gray-300 ' +
+    'focus:outline-none focus:ring focus:ring-blue-500/30 ' +
+    'dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700 dark:placeholder-gray-500 ' +
+    'dark:focus:ring-blue-400/30';
+
+  const cardBase =
+    'bg-white dark:bg-gray-900 shadow-lg rounded-xl p-8 max-w-md w-full text-center ' +
+    'border border-gray-200 dark:border-gray-700';
+
+  const primaryBtn =
+    'bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded font-bold w-full ' +
+    'focus:outline-none focus:ring focus:ring-blue-500/30 disabled:opacity-50';
+
+  const secondaryBtn =
+    'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded ' +
+    'focus:outline-none focus:ring focus:ring-blue-500/30';
+
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100 px-4 py-8">
-      <div className="bg-white shadow-lg rounded-xl p-8 max-w-md w-full text-center">
+    <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 px-4 py-8">
+      <div className={cardBase}>
         <h1 className="text-2xl font-bold mb-4">👤 פרופיל אישי</h1>
 
-        <label className="block mb-4 text-right">
+        <label className="block mb-4 text-right text-gray-800 dark:text-gray-200">
           שם תצוגה:
           <input
-            className="w-full mt-1 p-2 border rounded text-right"
+            className={inputBase}
             type="text"
             value={displayName}
+            placeholder="איך שנראה בלוח התוצאות"
             onChange={(e) => setDisplayName(e.target.value)}
           />
         </label>
 
-        <label className="block mb-4 text-right">
+        <label className="block mb-4 text-right text-gray-800 dark:text-gray-200">
           מספר טלפון:
           <input
-            className="w-full mt-1 p-2 border rounded text-right"
+            className={inputBase}
             type="tel"
+            inputMode="tel"
             placeholder="05XXXXXXXX"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
@@ -81,17 +104,20 @@ export default function ProfilePage() {
         </label>
 
         <button
-          className="bg-blue-600 text-white py-2 px-4 rounded font-bold hover:bg-blue-700 w-full"
+          className={primaryBtn}
           onClick={saveProfile}
+          disabled={saving}
         >
-          שמור
+          {saving ? 'שומר…' : 'שמור'}
         </button>
 
-        {saved && <p className="mt-4 text-green-600">✅ נשמר בהצלחה!</p>}
+        {saved && (
+          <p className="mt-4 text-green-600 dark:text-green-400">✅ נשמר בהצלחה!</p>
+        )}
 
         <div className="mt-6 text-center">
           <Link href="/submit">
-            <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+            <button className={secondaryBtn}>
               חזרה למסך הבית
             </button>
           </Link>

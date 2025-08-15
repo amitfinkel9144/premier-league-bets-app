@@ -1,4 +1,4 @@
-// ✅ גרסה מעודכנת של guesses/page.tsx עם כפתור חזרה לעמוד /submit
+// ✅ guesses/page.tsx – Option A: רקע מלא לתא, מותאם כהה/בהיר
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -16,7 +16,11 @@ export default function GuessesPage() {
 
   useEffect(() => {
     const determineCurrentMatchday = async () => {
-      const { data: matches } = await supabase.from('matches').select('matchday, start_datetime').order('matchday', { ascending: true });
+      const { data: matches } = await supabase
+        .from('matches')
+        .select('matchday, start_datetime')
+        .order('matchday', { ascending: true });
+
       if (!matches) return;
 
       const now = new Date();
@@ -33,7 +37,6 @@ export default function GuessesPage() {
           return;
         }
       }
-
       setMatchday(matches[matches.length - 1]?.matchday || 1);
     };
     determineCurrentMatchday();
@@ -111,17 +114,33 @@ export default function GuessesPage() {
     checkLockTime();
   }, [matchday]);
 
-  const getStyle = (guess: any) => {
-    const actual = actualScores[guess.match_id];
-    if (!actual) return '';
-    const exact = actual.home === guess.predicted_home_score && actual.away === guess.predicted_away_score;
+  // ✅ קובע מחלקות רקע מלא עם גרסאות כהות
+  const highlightClass = (kind: 'exact' | 'tendency' | 'miss') => {
+    switch (kind) {
+      case 'exact':    // בול
+        return 'bg-green-200 text-green-900 dark:bg-green-800 dark:text-green-100';
+      case 'tendency': // כיוון
+        return 'bg-amber-200 text-amber-900 dark:bg-amber-700 dark:text-amber-100';
+      default:         // פספוס
+        return 'bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100';
+    }
+  };
+
+  const outcomeKind = (g: any): 'exact' | 'tendency' | 'miss' => {
+    const actual = actualScores[g.match_id];
+    if (!actual) return 'miss';
+    const exact =
+      actual.home === g.predicted_home_score &&
+      actual.away === g.predicted_away_score;
+
     const tendency =
-      (actual.home > actual.away && guess.predicted_home_score > guess.predicted_away_score) ||
-      (actual.home < actual.away && guess.predicted_home_score < guess.predicted_away_score) ||
-      (actual.home === actual.away && guess.predicted_home_score === guess.predicted_away_score);
-    if (exact) return 'bg-green-200';
-    if (tendency) return 'bg-yellow-200';
-    return 'bg-white';
+      (actual.home > actual.away && g.predicted_home_score > g.predicted_away_score) ||
+      (actual.home < actual.away && g.predicted_home_score < g.predicted_away_score) ||
+      (actual.home === actual.away && g.predicted_home_score === g.predicted_away_score);
+
+    if (exact) return 'exact';
+    if (tendency) return 'tendency';
+    return 'miss';
   };
 
   const getWinnerText = (match: { home: number; away: number; home_team: string; away_team: string }) => {
@@ -132,15 +151,20 @@ export default function GuessesPage() {
 
   const getMatches = () => [...new Set(guesses.map((g) => g.match_id))];
 
+  const selectBase =
+    'border px-2 py-1 rounded bg-white text-gray-900 border-gray-300 ' +
+    'focus:outline-none focus:ring focus:ring-blue-500/30 ' +
+    'dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700 dark:focus:ring-blue-400/30';
+
   return (
-    <main className="min-h-screen flex flex-col items-center bg-gray-100 px-2 py-10">
-      <div className="bg-white shadow rounded-xl p-4 w-full max-w-6xl overflow-x-auto">
+    <main className="min-h-screen flex flex-col items-center bg-gray-100 dark:bg-gray-900 px-2 py-10">
+      <div className="bg-white dark:bg-gray-900 shadow rounded-2xl p-4 w-full max-w-6xl overflow-x-auto border border-gray-200 dark:border-gray-700">
         <h1 className="text-xl font-bold mb-4 text-center">הימורים למחזור {matchday ?? '...'}</h1>
 
         <div className="mb-4 text-right">
-          <label className="ml-2 font-semibold">בחר מחזור:</label>
+          <label className="ml-2 font-semibold text-gray-800 dark:text-gray-200">בחר מחזור:</label>
           <select
-            className="border px-2 py-1 rounded"
+            className={selectBase}
             value={matchday ?? ''}
             onChange={(e) => setMatchday(Number(e.target.value))}
           >
@@ -151,53 +175,73 @@ export default function GuessesPage() {
         </div>
 
         {!canShowGuesses ? (
-          <p className="text-red-600 text-center mb-4">
+          <p className="text-red-600 dark:text-red-400 text-center mb-4">
             ההימורים יוצגו ב־{lockTime?.toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' })}
           </p>
         ) : loading ? (
-          <p className="text-center">טוען...</p>
+          <p className="text-center text-gray-700 dark:text-gray-300">טוען...</p>
         ) : (
-          <table className="min-w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="border px-1 py-1">#</th>
-                <th className="border px-1 py-1">תוצאה</th>
-                {users.map((user) => (
-                  <th key={user} className="border px-1 py-1 whitespace-nowrap">{user}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {getMatches().map((matchId, index) => {
-                const match = guesses.find((g) => g.match_id === matchId);
-                const actual = actualScores[matchId];
-                return (
-                  <tr key={matchId}>
-                    <td className="border px-1 py-1 text-center">{index + 1}</td>
-                    <td className="border px-1 py-1 text-center font-semibold">
-                      {actual ? `${actual.home} - ${actual.away} ${getWinnerText(actual)}` : '?'}
-                    </td>
-                    {users.map((user) => {
-                      const g = guesses.find((x) => x.display_name === user && x.match_id === matchId);
-                      return (
-                        <td
-                          key={user}
-                          className={`border px-1 py-1 text-center ${g ? getStyle(g) : ''}`}
-                        >
-                          {g ? `${g.predicted_home_score} - ${g.predicted_away_score}` : <span className="text-red-600 font-bold">-</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+            <table className="min-w-full border-collapse text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="border border-gray-200 dark:border-gray-700 px-2 py-2 text-gray-700 dark:text-gray-200">#</th>
+                  <th className="border border-gray-200 dark:border-gray-700 px-2 py-2 text-gray-700 dark:text-gray-200">תוצאה</th>
+                  {users.map((user) => (
+                    <th
+                      key={user}
+                      className="border border-gray-200 dark:border-gray-700 px-2 py-2 whitespace-nowrap text-gray-700 dark:text-gray-200"
+                    >
+                      {user}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {getMatches().map((matchId, index) => {
+                  const actual = actualScores[matchId];
+                  return (
+                    <tr key={matchId}>
+                      <td className="border border-gray-200 dark:border-gray-700 px-2 py-2 text-center text-gray-900 dark:text-gray-100">
+                        {index + 1}
+                      </td>
+                      <td className="border border-gray-200 dark:border-gray-700 px-2 py-2 text-center font-semibold text-gray-900 dark:text-gray-100">
+                        {actual ? `${actual.home} - ${actual.away} ${getWinnerText(actual)}` : '?'}
+                      </td>
+                      {users.map((user) => {
+                        const g = guesses.find((x) => x.display_name === user && x.match_id === matchId);
+                        if (!g) {
+                          return (
+                            <td
+                              key={user}
+                              className={`border border-gray-200 dark:border-gray-700 px-2 py-2 text-center ${highlightClass('miss')}`}
+                            >
+                              <span className="text-red-600 dark:text-red-400 font-bold">-</span>
+                            </td>
+                          );
+                        }
+                        const kind = outcomeKind(g);
+                        return (
+                          <td
+                            key={user}
+                            className={`border border-gray-200 dark:border-gray-700 px-2 py-2 text-center ${highlightClass(kind)}`}
+                          >
+                            {g.predicted_home_score} - {g.predicted_away_score}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className="mt-6 text-center">
           <Link href="/submit">
-            <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+            <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded
+                               focus:outline-none focus:ring focus:ring-blue-500/30">
               חזרה למסך הבית
             </button>
           </Link>
