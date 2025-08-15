@@ -9,9 +9,9 @@ import { supabase } from '@/lib/supabaseClient';
 type Score = {
   user_id: string;
   username: string;
-  exact_hits: number;
-  direction_hits: number;
-  total_points: number;
+  exact_hits: number;      // בולים
+  direction_hits: number;  // כיוונים
+  total_points: number;    // נקודות
 };
 
 export default function LeaderboardPage() {
@@ -20,35 +20,33 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const fetchScores = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
 
-      const { data, error } = await supabase.from('user_scores').select('*');
+      // מיון מהשרת: נקודות ↓, כיוונים ↓
+      const { data, error } = await supabase
+        .from('user_scores')
+        .select('user_id, username, exact_hits, direction_hits, total_points')
+        .order('total_points', { ascending: false })
+        .order('direction_hits', { ascending: false });
 
       if (error) {
         console.error('שגיאה בטעינת טבלת ניקוד:', error.message);
         return;
       }
 
-      const cleaned = (data as Score[]).map((entry) => ({
-        ...entry,
-        total_points: Number(entry.total_points),
-        exact_hits: Number(entry.exact_hits),
-        direction_hits: Number(entry.direction_hits),
+      const cleaned = (data ?? []).map((e) => ({
+        user_id: e.user_id as string,
+        username: (e.username ?? '') as string,
+        total_points: Number(e.total_points ?? 0),
+        direction_hits: Number(e.direction_hits ?? 0),
+        exact_hits: Number(e.exact_hits ?? 0),
       }));
 
-      const sorted = cleaned.sort((a, b) => {
-        if (b.total_points !== a.total_points) return b.total_points - a.total_points;
-        return b.exact_hits - a.exact_hits;
-      });
-
-      setScores(sorted);
+      setScores(cleaned);
     };
 
     fetchScores();
@@ -72,16 +70,13 @@ export default function LeaderboardPage() {
             </tr>
           </thead>
           <tbody>
-            {scores.map((score, index) => (
-              <tr
-                key={score.user_id}
-                className="bg-gray-100 hover:bg-gray-200 transition-all"
-              >
+            {scores.map((row, index) => (
+              <tr key={row.user_id} className="bg-gray-100 hover:bg-gray-200 transition-all">
                 <td className="px-2 py-1 text-center font-bold">{index + 1}</td>
-                <td className="px-2 py-1 font-medium">{score.username}</td>
-                <td className="px-2 py-1 text-center">{score.exact_hits}</td>
-                <td className="px-2 py-1 text-center">{score.direction_hits}</td>
-                <td className="px-2 py-1 text-center font-bold">{score.total_points}</td>
+                <td className="px-2 py-1 font-medium">{row.username}</td>
+                <td className="px-2 py-1 text-center">{row.exact_hits}</td>
+                <td className="px-2 py-1 text-center">{row.direction_hits}</td>
+                <td className="px-2 py-1 text-center font-bold">{row.total_points}</td>
               </tr>
             ))}
           </tbody>
