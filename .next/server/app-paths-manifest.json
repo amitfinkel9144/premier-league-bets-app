@@ -1,5 +1,7 @@
 {
+  "/history/page": "app/history/page.js",
+  "/submit/page": "app/submit/page.js",
   "/guesses/page": "app/guesses/page.js",
   "/leaderboard/page": "app/leaderboard/page.js",
-  "/submit/page": "app/submit/page.js"
+  "/cup/page": "app/cup/page.js"
 }

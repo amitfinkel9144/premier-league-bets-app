@@ -5,10 +5,10 @@ import Link from 'next/link';
 
 const navItems = [
   { href: '/submit', label: 'הימורים', emoji: '⚽️' },
-  { href: '/results', label: 'תוצאות', emoji: '📊' },
   { href: '/leaderboard', label: 'טבלה', emoji: '🏅' },
   { href: '/guesses', label: 'לפי מחזור', emoji: '🗓️' },
-  { href: '/cup', label: 'גביע', emoji: '🏆' }, // ← הוספה כאן
+  { href: '/cup', label: 'גביע', emoji: '🏆' },
+  { href: '/history', label: 'היסטוריה', emoji: '📜' }, // ← טאב חדש
 ];
 
 export default function BottomNav() {
