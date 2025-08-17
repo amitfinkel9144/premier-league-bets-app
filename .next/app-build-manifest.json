@@ -11,25 +11,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/guesses/page.js"
     ],
-    "/history/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/history/page.js"
-    ],
     "/leaderboard/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/leaderboard/page.js"
-    ],
-    "/cup/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/cup/page.js"
-    ],
-    "/submit/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/submit/page.js"
     ]
   }
 }

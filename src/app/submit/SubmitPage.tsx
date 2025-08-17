@@ -1,3 +1,4 @@
+// src/app/submit/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -6,7 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 /** ------- Types ------- */
 type Match = {
   id: number;
-  home_team: string;   // יכול להיות שם מלא או כבר קוד 3 אותיות
+  home_team: string;
   away_team: string;
   start_datetime: string;
   matchday: number;
@@ -17,12 +18,10 @@ type Match = {
 type PredictionValue = '' | string;
 type Predictions = Record<number, { home: PredictionValue; away: PredictionValue }>;
 
-/** --- נרמול שם קבוצה: אותיות בלבד, & -> and, בלי רווחים/פיסוק --- */
+/** Helpers (כמו אצלך) **/
 function normalizeName(s: string): string {
   return s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z]/g, '');
 }
-
-/** ------- Name -> 3-letter code mapping (על בסיס שם מנורמל) ------- */
 const NAME_TO_CODE: Record<string, string> = {
   arsenal: 'ARS', ars: 'ARS',
   astonvilla: 'AVL', avl: 'AVL',
@@ -45,8 +44,6 @@ const NAME_TO_CODE: Record<string, string> = {
   westham: 'WHU', westhamunited: 'WHU', whu: 'WHU',
   wolves: 'WOL', wolverhampton: 'WOL', wolverhamptonwanderers: 'WOL', wol: 'WOL',
 };
-
-/** 3-letter code from raw name */
 function getTeamCode(raw: string): string {
   if (!raw) return 'TBD';
   const trimmed = raw.trim();
@@ -57,13 +54,9 @@ function getTeamCode(raw: string): string {
   const fallback = key.slice(0, 3).toUpperCase();
   return fallback || 'TBD';
 }
-
-// logo path
 function getLogoPathFromCode(code: string): string {
   return `/logos/${code}_logo.svg`;
 }
-
-/** limit input 0..15 as string */
 function sanitizeScoreInput(raw: string): PredictionValue {
   const digitsOnly = raw.replace(/[^0-9]/g, '');
   if (digitsOnly === '') return '';
@@ -72,7 +65,6 @@ function sanitizeScoreInput(raw: string): PredictionValue {
   return String(n);
 }
 
-/** -------- Team Badge (without label underneath) -------- */
 function TeamBadge({ teamName }: { teamName: string }) {
   const code = useMemo(() => getTeamCode(teamName), [teamName]);
   const initialLogo = useMemo(() => getLogoPathFromCode(code), [code]);
@@ -92,15 +84,11 @@ function TeamBadge({ teamName }: { teamName: string }) {
           />
         ) : null}
       </div>
-      {/* הוסר הטקסט שמתחת ללוגו */}
     </div>
   );
 }
 
-/** --- אפשרויות האלופה --- */
-const TEAM_OPTIONS = [
-  'ARS','AVL','BOU','BRE','BHA','CHE','CRY','EVE','FUL','LEE','LIV','MCI','MUN','NEW','NFO','SUN','TOT','WHU','WOL'
-];
+const TEAM_OPTIONS = ['ARS','AVL','BOU','BRE','BHA','CHE','CRY','EVE','FUL','LEE','LIV','MCI','MUN','NEW','NFO','SUN','TOT','WHU','WOL'];
 
 export default function SubmitPage() {
   const [matches, setMatches] = useState<Match[]>([]);
@@ -110,7 +98,6 @@ export default function SubmitPage() {
   const [lockTime, setLockTime] = useState<Date | null>(null);
   const [isMatchdayLocked, setIsMatchdayLocked] = useState(false);
 
-  // Champion pick
   const [championPick, setChampionPick] = useState<string>('');
   const [existingChampionPick, setExistingChampionPick] = useState<string>('');
   const [isSeasonPickSaving, setIsSeasonPickSaving] = useState(false);
@@ -137,19 +124,22 @@ export default function SubmitPage() {
         setBeforeFirstKickoff(false);
       }
 
-      // מחזור הקרוב שלא הושלם
+      // כל המשחקים (מסודרים גם לפי תאריך בתוך מחזור)
       const { data: allMatches } = await supabase
         .from('matches')
         .select('*')
-        .order('matchday', { ascending: true });
+        .order('matchday', { ascending: true })
+        .order('start_datetime', { ascending: true });
 
       if (!allMatches || allMatches.length === 0) return;
 
+      // קיבוץ למחזור
       const grouped: Record<number, Match[]> = {};
       allMatches.forEach((m) => {
         (grouped[m.matchday] ??= []).push(m);
       });
 
+      // מציאת המחזור הבא שלא הושלם
       let nextMatchdayMatches: Match[] = [];
       for (const md of Object.keys(grouped).map(Number).sort((a, b) => a - b)) {
         const allFinished = grouped[md].every(
@@ -158,12 +148,15 @@ export default function SubmitPage() {
         if (!allFinished) { nextMatchdayMatches = grouped[md]; break; }
       }
       if (nextMatchdayMatches.length === 0) return;
-      setMatches(nextMatchdayMatches);
 
-      // נעילת מחזור: 90 דקות לפני המשחק הראשון
-      const firstGame = [...nextMatchdayMatches].sort(
+      // *** סדר כרונולוגי בתוך המחזור ***
+      const sortedByTime = [...nextMatchdayMatches].sort(
         (a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime()
-      )[0];
+      );
+      setMatches(sortedByTime);
+
+      // נעילה 90 דק' לפני המשחק הראשון
+      const firstGame = sortedByTime[0];
       const lock = new Date(new Date(firstGame.start_datetime).getTime() - 90 * 60 * 1000);
       setLockTime(lock);
       setIsMatchdayLocked(new Date() >= lock);
@@ -175,7 +168,7 @@ export default function SubmitPage() {
         .eq('user_id', user.id);
 
       const initial: Predictions = {};
-      for (const m of nextMatchdayMatches) initial[m.id] = { home: '', away: '' };
+      for (const m of sortedByTime) initial[m.id] = { home: '', away: '' };
 
       (existingPredictions ?? []).forEach((p: any) => {
         initial[p.match_id] = {
@@ -234,7 +227,7 @@ export default function SubmitPage() {
       <div className="bg-white dark:bg-gray-900 shadow-lg rounded-xl p-8 w-full max-w-md text-center border border-gray-200 dark:border-gray-700">
         <h1 className="text-2xl font-bold mb-6">הימורים למחזור הקרוב</h1>
 
-        {/* חלונית הימור אלופה — אדום, ממורכז ובולט */}
+        {/* חלונית הימור אלופה */}
         {beforeFirstKickoff && (
           <div className="mb-8 rounded-2xl border-2 border-red-500 bg-red-50 dark:bg-red-900/20 shadow-lg p-6 text-center">
             <h3 className="font-bold text-lg mb-3 text-red-800 dark:text-red-300">🏆 הימור אלופת העונה</h3>
@@ -278,11 +271,8 @@ export default function SubmitPage() {
                     .from('season_winner_picks')
                     .upsert({ user_id: userId, team_code: championPick }, { onConflict: 'user_id' });
                   setIsSeasonPickSaving(false);
-                  if (error) {
-                    console.error('שגיאה בשמירת הימור אלופה:', error.message);
-                  } else {
-                    setExistingChampionPick(championPick);
-                  }
+                  if (!error) setExistingChampionPick(championPick);
+                  else console.error(error.message);
                 }}
                 className="bg-red-500 hover:bg-red-600 text-white rounded px-4 py-2 font-semibold disabled:opacity-50"
               >
@@ -296,7 +286,7 @@ export default function SubmitPage() {
           </div>
         )}
 
-        {/* הודעת נעילה למחזור */}
+        {/* הודעת נעילה */}
         {lockTime && !isMatchdayLocked && (
           <p className="mb-4 text-sm text-red-600">
             המחזור ינעל להימורים ב־{' '}
@@ -317,7 +307,6 @@ export default function SubmitPage() {
                 key={match.id}
                 className="mb-5 rounded-2xl border p-4 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
               >
-                {/* תאריך/שעה */}
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                   {new Date(match.start_datetime).toLocaleString('he-IL', {
                     dateStyle: 'short',
@@ -325,9 +314,7 @@ export default function SubmitPage() {
                   })}
                 </p>
 
-                {/* 3 עמודות: בית | VS | חוץ */}
                 <div dir="ltr" className="grid grid-cols-3 items-center gap-3">
-                  {/* בית */}
                   <div className="flex flex-col items-center gap-2">
                     <TeamBadge teamName={match.home_team} />
                     <input
@@ -343,12 +330,10 @@ export default function SubmitPage() {
                     <span className="text-xs text-gray-500 dark:text-gray-400">בית</span>
                   </div>
 
-                  {/* VS */}
                   <div className="flex flex-col items-center justify-center">
                     <span className="text-sm text-gray-500 dark:text-gray-400 font-semibold">VS</span>
                   </div>
 
-                  {/* חוץ */}
                   <div className="flex flex-col items-center gap-2">
                     <TeamBadge teamName={match.away_team} />
                     <input
@@ -365,7 +350,6 @@ export default function SubmitPage() {
                   </div>
                 </div>
 
-                {/* fallback – קוד 3 אותיות */}
                 <p className="mt-3 text-xs text-gray-600 dark:text-gray-300 tracking-wide">
                   {homeCode} <span className="text-gray-400 dark:text-gray-500">VS</span> {awayCode}
                 </p>
@@ -388,10 +372,7 @@ export default function SubmitPage() {
                   predicted_away_score: Number(s.away),
                 }));
 
-              if (rows.length === 0) {
-                alert('לא הוזנו ניחושים.');
-                return;
-              }
+              if (rows.length === 0) { alert('לא הוזנו ניחושים.'); return; }
 
               const { error } = await supabase
                 .from('predictions')
