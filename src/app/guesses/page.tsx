@@ -244,7 +244,7 @@ export default function GuessesPage() {
                 return (
                   <div key={matchId} className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
                     {/* משחק: לוגו+קוד */}
-                    <div className="flex items-center justify-center gap-3">
+                    <div dir="ltr" className="flex items-center justify-center gap-3">
                       <span className="inline-flex items-center gap-1.5">
                         <img src={teamLogoSrc(homeCode)} alt={homeCode} className="w-5 h-5" onError={(e)=>{(e.currentTarget as HTMLImageElement).style.visibility='hidden';}}/>
                         <span className="font-medium">{homeCode}</span>

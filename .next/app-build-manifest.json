@@ -11,10 +11,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/guesses/page.js"
     ],
-    "/leaderboard/page": [
+    "/submit/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/leaderboard/page.js"
+      "static/chunks/app/submit/page.js"
     ]
   }
 }

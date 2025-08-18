@@ -1,7 +1,7 @@
 // src/app/submit/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 /** ------- Types ------- */
@@ -103,6 +103,60 @@ export default function SubmitPage() {
   const [isSeasonPickSaving, setIsSeasonPickSaving] = useState(false);
   const [beforeFirstKickoff, setBeforeFirstKickoff] = useState<boolean>(false);
 
+  /** 🔁 רפרנסים לכל האינפוטים לפי הסדר */
+  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  /** שמירה (משותף גם לכפתור וגם לאנטר האחרון) */
+  const handleSave = async () => {
+    if (submitted || isMatchdayLocked || !userId) return;
+
+    const rows = Object.entries(predictions)
+      .filter(([, s]) => s.home !== '' && s.away !== '')
+      .map(([matchId, s]) => ({
+        user_id: userId!,
+        match_id: Number(matchId),
+        predicted_home_score: Number(s.home),
+        predicted_away_score: Number(s.away),
+      }));
+
+    if (rows.length === 0) {
+      alert('לא הוזנו ניחושים.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('predictions')
+      .upsert(rows, { onConflict: 'user_id,match_id' });
+
+    if (!error) setSubmitted(true);
+    else alert(error.message);
+  };
+
+  /** מעבר לאינפוט הבא (מדלג על disabled) */
+  const focusNextInput = (fromIndex: number) => {
+    for (let i = fromIndex + 1; i < inputsRef.current.length; i++) {
+      const el = inputsRef.current[i];
+      if (el && !el.disabled) {
+        el.focus();
+        el.select?.();
+        return;
+      }
+    }
+  };
+
+  /** אנטר → הבא, ואם זה האחרון → שמירה */
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const isLast = index === inputsRef.current.length - 1;
+      if (isLast) {
+        void handleSave();
+      } else {
+        focusNextInput(index);
+      }
+    }
+  };
+
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -189,6 +243,9 @@ export default function SubmitPage() {
         setExistingChampionPick(pickData.team_code);
         setChampionPick(pickData.team_code);
       }
+
+      // מאתחל מערך רפרנסים לאורך נכון (2 אינפוטים לכל משחק)
+      inputsRef.current = new Array(sortedByTime.length * 2).fill(null);
     };
 
     fetchInitialData();
@@ -297,17 +354,21 @@ export default function SubmitPage() {
         {matches.length === 0 ? (
           <p className="mb-6 text-gray-600 dark:text-gray-300">אין כרגע משחקים פתוחים להימור.</p>
         ) : (
-          matches.map((match) => {
+          matches.map((match, matchIndex) => {
             const p = predictions[match.id] ?? { home: '', away: '' };
             const homeCode = getTeamCode(match.home_team);
             const awayCode = getTeamCode(match.away_team);
+
+            const homeIdx = matchIndex * 2;
+            const awayIdx = matchIndex * 2 + 1;
+            const lastIdx = matches.length * 2 - 1;
 
             return (
               <div
                 key={match.id}
                 className="mb-5 rounded-2xl border p-4 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
               >
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
                   {new Date(match.start_datetime).toLocaleString('he-IL', {
                     dateStyle: 'short',
                     timeStyle: 'short',
@@ -318,14 +379,18 @@ export default function SubmitPage() {
                   <div className="flex flex-col items-center gap-2">
                     <TeamBadge teamName={match.home_team} />
                     <input
+                      ref={(el) => { inputsRef.current[homeIdx] = el; }}
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
+                      enterKeyHint={homeIdx === lastIdx ? 'done' : 'next'}
                       disabled={isMatchdayLocked}
+                      aria-disabled={isMatchdayLocked}
                       className={`${inputBase} ${isMatchdayLocked ? inputDisabled : ''}`}
                       placeholder="בית"
                       value={p.home}
                       onChange={(e) => handleChange(match.id, 'home', e.target.value)}
+                      onKeyDown={(e) => handleInputKeyDown(e, homeIdx)}
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">בית</span>
                   </div>
@@ -337,20 +402,24 @@ export default function SubmitPage() {
                   <div className="flex flex-col items-center gap-2">
                     <TeamBadge teamName={match.away_team} />
                     <input
+                      ref={(el) => { inputsRef.current[awayIdx] = el; }}
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
+                      enterKeyHint={awayIdx === lastIdx ? 'done' : 'next'}
                       disabled={isMatchdayLocked}
+                      aria-disabled={isMatchdayLocked}
                       className={`${inputBase} ${isMatchdayLocked ? inputDisabled : ''}`}
                       placeholder="חוץ"
                       value={p.away}
                       onChange={(e) => handleChange(match.id, 'away', e.target.value)}
+                      onKeyDown={(e) => handleInputKeyDown(e, awayIdx)}
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">חוץ</span>
                   </div>
                 </div>
 
-                <p className="mt-3 text-xs text-gray-600 dark:text-gray-300 tracking-wide">
+                <p className="mt-3 text-xs text-gray-600 dark:text-gray-300 tracking-wide text-center">
                   {homeCode} <span className="text-gray-400 dark:text-gray-500">VS</span> {awayCode}
                 </p>
               </div>
@@ -360,27 +429,7 @@ export default function SubmitPage() {
 
         {matches.length > 0 && !isMatchdayLocked && (
           <button
-            onClick={async () => {
-              if (!userId) return;
-
-              const rows = Object.entries(predictions)
-                .filter(([, s]) => s.home !== '' && s.away !== '')
-                .map(([matchId, s]) => ({
-                  user_id: userId,
-                  match_id: Number(matchId),
-                  predicted_home_score: Number(s.home),
-                  predicted_away_score: Number(s.away),
-                }));
-
-              if (rows.length === 0) { alert('לא הוזנו ניחושים.'); return; }
-
-              const { error } = await supabase
-                .from('predictions')
-                .upsert(rows, { onConflict: 'user_id,match_id' });
-
-              if (!error) setSubmitted(true);
-              else alert(error.message);
-            }}
+            onClick={handleSave}
             disabled={submitted}
             className={buttonPrimary}
           >
